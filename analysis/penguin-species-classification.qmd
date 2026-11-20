@@ -1,0 +1,87 @@
+---
+title: "Classifying Palmer penguin species from body measurements"
+author:
+  - "Ariana Cruz-Montgomery"
+  - "Taishi Huang"
+  - "Zaakeer Ahmad"
+format:
+  html:
+    embed-resources: true
+execute:
+  echo: true
+jupyter: python3
+---
+
+## Summary
+
+We asked whether bill length, bill depth, flipper length, and body mass can identify an adult penguin from the Palmer Archipelago as Adelie, Chinstrap, or Gentoo. Multinomial logistic regression, fit only on a training set of 257 birds, classified all 85 held-out test birds correctly, so both accuracy and macro-F1 were 1.00. Gentoo penguins are heavier, with longer flippers and shallower bills. Chinstrap penguins have longer bills than Adelie penguins of about the same weight. The main limitation is that these three species are unusually easy to separate with these measurements: five-fold cross-validation on the training set had a mean macro-F1 of 0.986 rather than 1, and the data come from one Antarctic archipelago over three breeding seasons.
+
+## Introduction
+
+Three penguin species in the genus *Pygoscelis* nest around Palmer Station, Antarctica: the Adelie penguin, the Chinstrap penguin, and the Gentoo penguin. Field teams identify them by plumage and by the shape of the head, but museum specimens, photographs, and incomplete records sometimes preserve only a few size measurements. It is worth asking how far those measurements go. If they already separate the species, a simple statistical model is a useful check on data quality and a baseline for later ecological work. If they do not, observers need information the size measurements do not contain.
+
+Gorman, Williams, and Fraser (2014) measured foraging adults near Palmer Station from 2007 to 2009 as part of the Palmer Station Long Term Ecological Research program. Horst, Hill, and Gorman (2020) published a curated table of those measurements. We use that curated table. It is released under Creative Commons Zero (CC0), which allows the file to be stored in a public repository and reused. Each row is one adult penguin. The columns we use are species, bill length in millimetres, bill depth in millimetres, flipper length in millimetres, and body mass in grams. The file also records island, sex, and year. The table has 344 rows: 152 Adelie, 124 Gentoo, and 68 Chinstrap penguins.
+
+The question is predictive. Can bill length, bill depth, flipper length, and body mass classify a penguin into its species? The target is species. The question can be answered with this table because every row has a species label assigned by the original field study, together with the four measurements for all but two birds.
+
+We do not use island as a predictor. Chinstrap penguins in this table were observed only on Dream Island, and Gentoo penguins only on Biscoe Island, so the island name nearly repeats the species label for two of the three classes. Adelie penguins occur on all three islands. A model that saw the island would look more accurate without having learned the body measurements. We also leave out sex and year. Sex is missing for 11 birds, and year identifies the season of sampling rather than the bird's body.
+
+```{python}
+# Each row is one adult penguin.
+# Target variable: species (Adelie, Chinstrap, or Gentoo). This is what we predict.
+# Features: bill_length_mm, bill_depth_mm, flipper_length_mm, body_mass_g.
+# Unused columns: island (almost repeats species), sex (missing for 11 birds), year (sampling season, not body size).
+from pathlib import Path
+
+import matplotlib.pyplot as plt
+import pandas as pd
+from sklearn.linear_model import LogisticRegression
+from sklearn.metrics import accuracy_score, confusion_matrix, f1_score
+from sklearn.model_selection import GridSearchCV, StratifiedKFold, train_test_split
+from sklearn.pipeline import Pipeline
+from sklearn.preprocessing import StandardScaler
+
+plt.rcParams.update({
+    "font.size": 12,
+    "axes.labelsize": 12,
+    "legend.fontsize": 11,
+    "figure.dpi": 120,
+})
+
+ROOT = Path.cwd()
+if not (ROOT / "pyproject.toml").exists() and (ROOT.parent / "pyproject.toml").exists():
+    ROOT = ROOT.parent
+
+# Same curated table as palmerpenguins::penguins in R. Licence: CC0.
+# Download from the original URL and save the untouched file in data/raw/.
+RAW_URL = (
+    "https://raw.githubusercontent.com/allisonhorst/"
+    "palmerpenguins/main/inst/extdata/penguins.csv"
+)
+# Predictors used by the classifier. Units are millimetres and grams.
+FEATURES = [
+    "bill_length_mm",      # bill length (mm)
+    "bill_depth_mm",       # bill depth (mm)
+    "flipper_length_mm",   # flipper length (mm)
+    "body_mass_g",         # body mass (g)
+]
+TARGET = "species"  # response: Adelie, Chinstrap, or Gentoo
+# Fixed seed so the train/test split is the same every time the report is rendered.
+RANDOM_STATE = 522
+SPECIES_ORDER = ["Adelie", "Chinstrap", "Gentoo"]
+SPECIES_COLOURS = {
+    "Adelie": "#E69F00",
+    "Chinstrap": "#CC79A7",
+    "Gentoo": "#009E73",
+}
+
+raw_path = ROOT / "data" / "raw" / "penguins.csv"
+processed_dir = ROOT / "data" / "processed"
+raw_path.parent.mkdir(parents=True, exist_ok=True)
+processed_dir.mkdir(parents=True, exist_ok=True)
+
+# Save the downloaded file first. Later steps read this local copy and do not edit it.
+pd.read_csv(RAW_URL).to_csv(raw_path, index=False)
+penguins = pd.read_csv(raw_path)
+penguins.shape
+```
