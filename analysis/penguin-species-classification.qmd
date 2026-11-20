@@ -85,3 +85,55 @@ pd.read_csv(RAW_URL).to_csv(raw_path, index=False)
 penguins = pd.read_csv(raw_path)
 penguins.shape
 ```
+
+## Methods
+
+The response has three classes, and the predictors are numeric measurements on incompatible units: millimetres and grams. Multinomial logistic regression is a direct model for that situation. It estimates the probability of each species from a linear function of the predictors, then classifies the bird as the species with the highest probability (James, Witten, Hastie, and Tibshirani 2021). We use the implementation in scikit-learn (Pedregosa et al. 2011). Before fitting, each measurement is standardized to mean zero and standard deviation one, using the training birds only, so that body mass does not dominate the penalty term merely because it is recorded in grams.
+
+The model has one chosen setting, the inverse penalty strength, usually called C. A larger C means a weaker penalty. We compared C values of 0.01, 0.1, 1, 10, and 100. The comparison used five-fold stratified cross-validation inside the training set and selected the value with the highest mean macro-F1. Macro-F1 is the F1 score computed separately for each species and then averaged, so the smallest class, Chinstrap, counts as much as the largest class, Adelie. Accuracy alone would mostly reflect the larger Adelie and Gentoo groups. We report accuracy as well, because it answers the plain question of how often the species label is right.
+
+The test set was created before any of these choices were inspected. We held out 25 percent of the 344 rows, stratified by species, with random seed 522. Missingness was inspected on the training rows only.
+
+```{python}
+# Split before any exploratory plot, row dropping, or model choice.
+# stratify keeps the species mix in the training and test sets close to the full table.
+# The target used for stratifying is species, not a feature.
+train_df, test_df = train_test_split(
+    penguins,
+    test_size=0.25,
+    random_state=RANDOM_STATE,
+    stratify=penguins[TARGET],
+)
+
+missing_labels = [
+    "Species",
+    "Island",
+    "Bill length (mm)",
+    "Bill depth (mm)",
+    "Flipper length (mm)",
+    "Body mass (g)",
+    "Sex",
+    "Year",
+]
+# Count missing values on the training rows only. The test set does not decide how we clean.
+missing = train_df.isna().sum().rename("Missing training rows").to_frame()
+missing.index = missing_labels
+missing
+```
+
+One training bird is missing all four measurements. That is too little information to support an imputation model, and a bird with no measurements cannot be classified from those measurements. We therefore drop any row with a missing measurement. The same rule is applied to the test set. Sex is also missing for some training birds, but sex is not a predictor, so those rows stay. The cleaned tables are written to `data/processed/`.
+
+```{python}
+# Drop a row if any feature is missing. Species itself has no missing values.
+# The rule is chosen from the training set and then applied unchanged to the test set.
+# Cleaned tables go to data/processed/. data/raw/ stays as downloaded.
+train_fit = train_df.dropna(subset=FEATURES).copy()
+test_fit = test_df.dropna(subset=FEATURES).copy()
+train_fit.to_csv(processed_dir / "penguins_train.csv", index=False)
+test_fit.to_csv(processed_dir / "penguins_test.csv", index=False)
+
+print(f"Training birds before dropping incomplete rows: {len(train_df)}")
+print(f"Test birds before dropping incomplete rows: {len(test_df)}")
+print(f"Training birds used: {len(train_fit)}")
+print(f"Test birds used: {len(test_fit)}")
+```
