@@ -1,0 +1,355 @@
+---
+title: "Classifying Palmer penguin species from body measurements"
+author:
+  - "Ariana Cruz-Montgomery"
+  - "Taishi Huang"
+  - "Zaakeer Ahmad"
+format:
+  html:
+    embed-resources: true
+execute:
+  echo: true
+jupyter: python3
+---
+
+## Summary
+
+We asked whether bill length, bill depth, flipper length, and body mass can identify an adult penguin from the Palmer Archipelago as Adelie, Chinstrap, or Gentoo. Multinomial logistic regression, fit only on a training set of 257 birds, classified all 85 held-out test birds correctly, so both accuracy and macro-F1 were 1.00. Gentoo Penguins are heavier, with longer flippers and shallower bills. Chinstrap Penguins have longer bills than Adelie Penguins of about the same weight. The main limitation is that these three species are unusually easy to separate with these measurements: five-fold cross-validation on the training set had a mean macro-F1 of 0.986 rather than 1, and the data come from one Antarctic archipelago over three breeding seasons.
+
+## Introduction
+
+Three penguin species in the genus *Pygoscelis* nest around Palmer Station, Antarctica: the Adelie Penguin, the Chinstrap Penguin, and the Gentoo Penguin. Field teams identify them by plumage and by the shape of the head, but museum specimens, photographs, and incomplete records sometimes preserve only a few size measurements. It is worth asking how far those measurements go. If they already separate the species, a simple statistical model is a useful check on data quality and a baseline for later ecological work. If they do not, observers need information the size measurements do not contain.
+
+Gorman, Williams, and Fraser (2014) measured foraging adults near Palmer Station from 2007 to 2009 as part of the Palmer Station Long Term Ecological Research program. Horst, Hill, and Gorman (2020) published a curated table of those measurements. We use that curated table. It is released under Creative Commons Zero (CC0), which allows the file to be stored in a public repository and reused. Each row is one adult penguin. The columns we use are species, bill length in millimetres, bill depth in millimetres, flipper length in millimetres, and body mass in grams. The file also records island, sex, and year. The table has 344 rows: 152 Adelie, 124 Gentoo, and 68 Chinstrap Penguins.
+
+The question is predictive. Can bill length, bill depth, flipper length, and body mass classify a penguin into its species? The target is species. The question can be answered with this table because every row has a species label assigned by the original field study, together with the four measurements for all but two birds.
+
+We do not use island as a predictor. Chinstrap Penguins in this table were observed only on Dream Island, and Gentoo Penguins only on Biscoe Island, so the island name nearly repeats the species label for two of the three classes. Adelie Penguins occur on all three islands. A model that saw the island would look more accurate without having learned the body measurements. We also leave out sex and year. Sex is missing for 11 birds, and year identifies the season of sampling rather than an aspect of the bird's body.
+
+```{python}
+# Each row is one adult penguin.
+# Target variable: species (Adelie, Chinstrap, or Gentoo). This is what we predict.
+# Features: bill_length_mm, bill_depth_mm, flipper_length_mm, body_mass_g.
+# Unused columns: island (almost repeats species), sex (missing for 11 birds), year (sampling season, not body size).
+from pathlib import Path
+
+import matplotlib.pyplot as plt
+import pandas as pd
+from sklearn.linear_model import LogisticRegression
+from sklearn.metrics import accuracy_score, confusion_matrix, f1_score
+from sklearn.model_selection import GridSearchCV, StratifiedKFold, train_test_split
+from sklearn.pipeline import Pipeline
+from sklearn.preprocessing import StandardScaler
+
+plt.rcParams.update({
+    "font.size": 12,
+    "axes.labelsize": 12,
+    "legend.fontsize": 11,
+    "figure.dpi": 120,
+})
+
+ROOT = Path.cwd()
+if not (ROOT / "pyproject.toml").exists() and (ROOT.parent / "pyproject.toml").exists():
+    ROOT = ROOT.parent
+
+# Same curated table as palmerpenguins::penguins in R. Licence: CC0.
+# Download from the original URL and save the untouched file in data/raw/.
+RAW_URL = (
+    "https://raw.githubusercontent.com/allisonhorst/"
+    "palmerpenguins/main/inst/extdata/penguins.csv"
+)
+# Predictors used by the classifier. Units are millimetres and grams.
+FEATURES = [
+    "bill_length_mm",      # bill length (mm)
+    "bill_depth_mm",       # bill depth (mm)
+    "flipper_length_mm",   # flipper length (mm)
+    "body_mass_g",         # body mass (g)
+]
+TARGET = "species"  # response: Adelie, Chinstrap, or Gentoo
+# Fixed seed so the train/test split is the same every time the report is rendered.
+RANDOM_STATE = 522
+SPECIES_ORDER = ["Adelie", "Chinstrap", "Gentoo"]
+SPECIES_COLOURS = {
+    "Adelie": "#E69F00",
+    "Chinstrap": "#CC79A7",
+    "Gentoo": "#009E73",
+}
+SPECIES_MARKERS = {
+    "Adelie": "o",       # circle
+    "Chinstrap": "s",    # square
+    "Gentoo": "^",       # triangle
+}
+
+raw_path = ROOT / "data" / "raw" / "penguins.csv"
+processed_dir = ROOT / "data" / "processed"
+raw_path.parent.mkdir(parents=True, exist_ok=True)
+processed_dir.mkdir(parents=True, exist_ok=True)
+
+# Save the downloaded file first. Later steps read this local copy and do not edit it.
+pd.read_csv(RAW_URL).to_csv(raw_path, index=False)
+penguins = pd.read_csv(raw_path)
+penguins.shape
+```
+
+## Methods
+
+The response has three classes, and the predictors are numeric measurements on incompatible units: millimetres and grams. Multinomial logistic regression is a direct model for that situation. It estimates the probability of each species from a linear function of the predictors, then classifies the bird as the species with the highest probability (James, Witten, Hastie, and Tibshirani 2021). We use the implementation in scikit-learn (Pedregosa et al. 2011). Before fitting, each measurement is standardized to mean zero and standard deviation one, using the training birds only, so that body mass does not dominate the penalty term merely because it is recorded in grams.
+
+The model has one chosen setting, the inverse penalty strength, usually called C. A larger C means a weaker penalty. We compared C values of 0.01, 0.1, 1, 10, and 100. The comparison used five-fold stratified cross-validation inside the training set and selected the value with the highest mean macro-F1. Macro-F1 is the F1 score computed separately for each species and then averaged, so the smallest class, Chinstrap, counts as much as the largest class, Adelie. Accuracy alone would mostly reflect the larger Adelie and Gentoo groups. We report accuracy as well, because it answers the plain question of how often the species label is right.
+
+The test set was created before any of these choices were inspected. We held out 25 percent of the 344 rows, stratified by species, with random seed 522. Missingness was inspected on the training rows only.
+
+```{python}
+# Split before any exploratory plot, row dropping, or model choice.
+# stratify keeps the species mix in the training and test sets close to the full table.
+# The target used for stratifying is species, not a feature.
+train_df, test_df = train_test_split(
+    penguins,
+    test_size=0.25,
+    random_state=RANDOM_STATE,
+    stratify=penguins[TARGET],
+)
+
+missing_labels = [
+    "Species",
+    "Island",
+    "Bill length (mm)",
+    "Bill depth (mm)",
+    "Flipper length (mm)",
+    "Body mass (g)",
+    "Sex",
+    "Year",
+]
+# Count missing values on the training rows only. The test set does not decide how we clean.
+missing = train_df.isna().sum().rename("Missing training rows").to_frame()
+missing.index = missing_labels
+missing
+```
+
+One training bird is missing all four measurements. That is too little information to support an imputation model, and a bird with no measurements cannot be classified from those measurements. We therefore drop any row with a missing measurement. The same rule is applied to the test set. Sex is also missing for some training birds, but sex is not a predictor, so those rows stay. The cleaned tables are written to `data/processed/`.
+
+```{python}
+# Drop a row if any feature is missing. Species itself has no missing values.
+# The rule is chosen from the training set and then applied unchanged to the test set.
+# Cleaned tables go to data/processed/. data/raw/ stays as downloaded.
+train_fit = train_df.dropna(subset=FEATURES).copy()
+test_fit = test_df.dropna(subset=FEATURES).copy()
+train_fit.to_csv(processed_dir / "penguins_train.csv", index=False)
+test_fit.to_csv(processed_dir / "penguins_test.csv", index=False)
+
+print(f"Training birds before dropping incomplete rows: {len(train_df)}")
+print(f"Test birds before dropping incomplete rows: {len(test_df)}")
+print(f"Training birds used: {len(train_fit)}")
+print(f"Test birds used: {len(test_fit)}")
+```
+
+Exploratory summaries and figures below use the cleaned training set only. The test set is not plotted and is not used to choose C.
+
+```{python}
+# Training set only. Counts are of the target, species.
+# Means are of the four features: bill length, bill depth, flipper length, and body mass.
+counts = train_fit[TARGET].value_counts().reindex(SPECIES_ORDER)
+means = (
+    train_fit.groupby(TARGET, observed=True)[FEATURES]
+    .mean()
+    .reindex(SPECIES_ORDER)
+)
+training_summary = means.round(1)
+training_summary.insert(0, "Birds", counts.astype(int))
+training_summary = training_summary.reset_index()
+training_summary.columns = [
+    "Species",
+    "Birds",
+    "Bill length (mm)",
+    "Bill depth (mm)",
+    "Flipper length (mm)",
+    "Body mass (g)",
+]
+training_summary = training_summary.set_index("Species")
+training_summary
+```
+
+**Table 1.** Number of training birds of each species, and the mean of each body measurement.
+
+```{python}
+#| fig-width: 6
+#| fig-height: 4.2
+# Training-set count of the target variable. Chinstrap is the smallest class.
+figure, axis = plt.subplots()
+axis.bar(
+    counts.index,
+    counts.values,
+    color=[SPECIES_COLOURS[species] for species in counts.index],
+)
+axis.set_xlabel("Species")
+axis.set_ylabel("Number of penguins")
+axis.set_ylim(0, counts.max() * 1.2)
+figure.tight_layout()
+plt.show()
+```
+
+**Figure 1.** Number of training birds of each species. The Adelie group has the most birds, and the Chinstrap group has the least.
+
+```{python}
+#| fig-width: 6.5
+#| fig-height: 4.8
+# Training set only. Two features: bill length (mm) and bill depth (mm).
+# Colour and marker shape both show the target, species.
+figure, axis = plt.subplots()
+for species, group in train_fit.groupby(TARGET, observed=True):
+    axis.scatter(
+        group["bill_length_mm"],
+        group["bill_depth_mm"],
+        label=species,
+        c=SPECIES_COLOURS[species],
+        marker=SPECIES_MARKERS[species],
+        alpha=0.75,
+        s=36,
+        edgecolors="none",
+    )
+axis.set_xlabel("Bill length (mm)")
+axis.set_ylabel("Bill depth (mm)")
+axis.legend(title="Species")
+figure.tight_layout()
+plt.show()
+```
+
+**Figure 2.** Bill length and bill depth in the training set. Gentoo Penguins have shallower bills. Chinstrap Penguins have longer bills than Adelie Penguins.
+
+```{python}
+#| fig-width: 6.5
+#| fig-height: 4.8
+# Training set only. Two features: flipper length (mm) and body mass (g).
+# Colour and marker shape both show the target, species.
+figure, axis = plt.subplots()
+for species, group in train_fit.groupby(TARGET, observed=True):
+    axis.scatter(
+        group["flipper_length_mm"],
+        group["body_mass_g"],
+        label=species,
+        c=SPECIES_COLOURS[species],
+        marker=SPECIES_MARKERS[species],
+        alpha=0.75,
+        s=36,
+        edgecolors="none",
+    )
+axis.set_xlabel("Flipper length (mm)")
+axis.set_ylabel("Body mass (g)")
+axis.legend(title="Species")
+figure.tight_layout()
+plt.show()
+```
+
+**Figure 3.** Flipper length and body mass in the training set. Gentoo Penguins are heavier and have longer flippers. Adelie and Chinstrap Penguins overlap on both axes.
+
+The classifier is a pipeline: standardize the four measurements, then fit an L2-penalized multinomial logistic regression. Cross-validation refits both steps inside every training fold, so the held-out fold does not contribute to the means and standard deviations used to standardize it. After C is selected, the pipeline is refit on the whole cleaned training set and applied once to the cleaned test set.
+
+```{python}
+# Fit on the training features only. The target is species.
+# StandardScaler is inside the pipeline, so each cross-validation fold
+# computes its own means and standard deviations from that fold's training rows.
+# The score here is macro-F1 inside the training set, not the final test score.
+pipeline = Pipeline(
+    [
+        ("scale", StandardScaler()),
+        (
+            "model",
+            LogisticRegression(max_iter=5000, random_state=RANDOM_STATE),
+        ),
+    ]
+)
+search = GridSearchCV(
+    pipeline,
+    param_grid={"model__C": [0.01, 0.1, 1.0, 10.0, 100.0]},
+    scoring="f1_macro",
+    cv=StratifiedKFold(n_splits=5, shuffle=True, random_state=RANDOM_STATE),
+)
+search.fit(train_fit[FEATURES], train_fit[TARGET])
+
+cv_scores = pd.DataFrame(search.cv_results_)[
+    ["param_model__C", "mean_test_score", "std_test_score"]
+].sort_values("param_model__C")
+cv_scores.columns = ["Penalty setting C", "Mean macro-F1", "Standard deviation"]
+cv_scores = cv_scores.set_index("Penalty setting C")
+cv_scores.round(3)
+```
+
+**Table 2.** Mean macro-F1 from five-fold cross-validation on the training set. The penalty setting is chosen from this table, not from the test set.
+
+## Results
+
+The cross-validation in Table 2 selects C = 100, with a mean macro-F1 of 0.986. Values from 1 to 100 are close to one another. C = 0.01 is worse, so a very strong penalty removes useful differences among the measurements. Table 1 and Figures 2 and 3 show what those differences are. In the training set, Gentoo Penguins average about 5106 g and have flippers about 217 mm long, compared with about 3700 g and flippers near 190 to 196 mm for the other two species. Their bills are also shallower, about 15.0 mm against about 18.4 mm. Adelie and Chinstrap Penguins have similar bill depth and body mass, but Chinstrap bills are longer, about 48.9 mm against about 38.8 mm for Adelie.
+
+```{python}
+# One prediction on the test features, after C has already been chosen.
+# predicted is the predicted species. test_fit[TARGET] is the observed species.
+predicted = search.predict(test_fit[FEATURES])
+test_metrics = pd.DataFrame(
+    {
+        "Value": [
+            accuracy_score(test_fit[TARGET], predicted),
+            f1_score(test_fit[TARGET], predicted, average="macro"),
+        ]
+    },
+    index=["Accuracy", "Macro-F1"],
+)
+test_metrics.round(3)
+```
+
+**Table 3.** Accuracy and macro-F1 on the cleaned test set of 85 penguins.
+
+```{python}
+#| fig-width: 5.6
+#| fig-height: 4.6
+# Rows are the observed target (species recorded in the field).
+# Columns are the predicted target. Counts off the diagonal are mistakes.
+matrix = confusion_matrix(
+    test_fit[TARGET],
+    predicted,
+    labels=SPECIES_ORDER,
+)
+figure, axis = plt.subplots()
+axis.imshow(matrix, cmap="Blues")
+axis.set_xticks(range(len(SPECIES_ORDER)), SPECIES_ORDER)
+axis.set_yticks(range(len(SPECIES_ORDER)), SPECIES_ORDER)
+axis.set_xlabel("Predicted species")
+axis.set_ylabel("Observed species")
+for row in range(matrix.shape[0]):
+    for column in range(matrix.shape[1]):
+        axis.text(
+            column,
+            row,
+            str(matrix[row, column]),
+            ha="center",
+            va="center",
+            color="black",
+        )
+figure.tight_layout()
+plt.show()
+```
+
+**Figure 4.** Confusion matrix for the cleaned test set. Rows are the species recorded in the field, and columns are the species predicted by the model.
+
+Table 3 and Figure 4 agree. All 37 Adelie, all 17 Chinstrap, and all 31 Gentoo Penguins in the cleaned test set were classified as the species recorded by the field team. Accuracy is 1.00 and macro-F1 is 1.00. No off-diagonal cell in Figure 4 contains a bird.
+
+## Discussion
+
+The measurements do answer the question in this sample. A penguin with a long, shallow bill, a long flipper, and a high body mass is classified as Gentoo. Between the two smaller species, a longer bill points to Chinstrap and a shorter bill points to Adelie. That reading matches the training means in Table 1 and the separation in Figures 2 and 3, and it is the pattern we expected from the way these species are usually described.
+
+These scores are also well above a simple comparison chosen from the training set. Adelie is the most common species there, so the comparison predicts Adelie for every bird. On the cleaned test set that rule is right for 37 of 85 birds, an accuracy of about 0.44. Every Chinstrap Penguin and every Gentoo Penguin is counted as wrong, so its macro-F1 is about 0.20. The fitted model's accuracy and macro-F1 of 1.00 are substantially higher. The comparison was scored once on the test set and was not used to choose C.
+
+We expected high accuracy, but not a perfect test set. Gorman, Williams, and Fraser (2014) documented size differences among these species, and the curated table is widely used in teaching precisely because the classes are easy to see. The perfect test result should be kept in proportion. The cleaned test set has only 85 birds, and cross-validation inside the training set still made a few mistakes: the selected model's mean macro-F1 there was 0.986, not 1. A new sample from the same measurement protocol could land in that remaining overlap, particularly between Adelie and Chinstrap Penguins of similar mass.
+
+Several assumptions limit how far the finding travels. Logistic regression treats the log-odds of each species as a linear function of the standardized measurements. Figures 2 and 3 look compatible with that, but a linear boundary is still a modelling choice. Birds that share a colony and a breeding season are not independent observations, so the effective sample is smaller than 342 measured birds. Dropping the two birds with no measurements assumes that the reason those values are missing is unrelated to species. Sex was left out even though males and females of the same species differ in size (Gorman, Williams, and Fraser 2014); some of the spread inside each cloud in Figures 2 and 3 is sexual dimorphism rather than species. The data cover three islands near Palmer Station and the seasons 2007, 2008, and 2009 only.
+
+The practical impact is therefore modest. The analysis shows that a scripted pipeline can download the original file, keep the test birds out of every modelling choice, and recover the species labels from four measurements. It does not justify using the fitted model to identify penguins in another region, and it does not replace a field observer. A useful next question is whether sex, once the training set has been used to decide how to handle the missing values, reduces the few mistakes that cross-validation still finds. A harder test is a later Palmer season, or another colony, that was not part of this file.
+
+## References
+
+Gorman, K. B., T. D. Williams, and W. R. Fraser. 2014. "Ecological Sexual Dimorphism and Environmental Variability within a Community of Antarctic Penguins (Genus Pygoscelis)." *PLoS ONE* 9 (3): e90081. https://doi.org/10.1371/journal.pone.0090081.
+
+Horst, A. M., A. P. Hill, and K. B. Gorman. 2020. *palmerpenguins: Palmer Archipelago (Antarctica) Penguin Data*. R package version 0.1.0. https://doi.org/10.5281/zenodo.3960218.
+
+James, G., D. Witten, T. Hastie, and R. Tibshirani. 2021. *An Introduction to Statistical Learning, with Applications in R*. 2nd ed. New York: Springer. https://www.statlearning.com/.
+
+Pedregosa, F., G. Varoquaux, A. Gramfort, V. Michel, B. Thirion, O. Grisel, M. Blondel, P. Prettenhofer, R. Weiss, V. Dubourg, J. Vanderplas, A. Passos, D. Cournapeau, M. Brucher, M. Perrot, and E. Duchesnay. 2011. "Scikit-learn: Machine Learning in Python." *Journal of Machine Learning Research* 12: 2825–2830. https://jmlr.org/papers/v12/pedregosa11a.html.
