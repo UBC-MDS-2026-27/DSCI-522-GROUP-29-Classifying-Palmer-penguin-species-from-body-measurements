@@ -15,6 +15,8 @@ Examples of unacceptable behavior by participants include:
 
 Furthermore, we encourage inclusive behavior - for example, please don't say “hey guys!” but “hey everyone!”.
 
-Failure to adhere to these standards of behavior will consitute breach of contract as specified in the team contract.  Furthermore, if an offended party feels psychologically or physically unsafe to the degree that they are not comfortable with written or in-person steps with the offender, they may appeal directly to the teaching staff.
+We the maintainers are committed to addressing any reported issues promptly. Instances of abusive, harassing, or otherwise unacceptable behavior may be reported by contacting the admins of this repo.
+
+All complaints will be reviewed and investigated and will result in a response that is deemed necessary and appropriate to the circumstances. Maintainers are obligated to maintain confidentiality with regard to the reporter of an incident.
 
 This Code of Conduct is adapted from the Pandas Contributor Code of Conduct, available at [https://github.com/pandas-dev/pandas-governance/blob/main/code-of-conduct.md?plain=1].
