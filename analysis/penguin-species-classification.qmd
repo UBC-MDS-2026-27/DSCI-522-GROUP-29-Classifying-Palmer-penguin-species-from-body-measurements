@@ -137,3 +137,98 @@ print(f"Test birds before dropping incomplete rows: {len(test_df)}")
 print(f"Training birds used: {len(train_fit)}")
 print(f"Test birds used: {len(test_fit)}")
 ```
+
+Exploratory summaries and figures below use the cleaned training set only. The test set is not plotted and is not used to choose C.
+
+```{python}
+# Training set only. Counts are of the target, species.
+# Means are of the four features: bill length, bill depth, flipper length, and body mass.
+counts = train_fit[TARGET].value_counts().reindex(SPECIES_ORDER)
+means = (
+    train_fit.groupby(TARGET, observed=True)[FEATURES]
+    .mean()
+    .reindex(SPECIES_ORDER)
+)
+training_summary = means.round(1)
+training_summary.insert(0, "Birds", counts.astype(int))
+training_summary = training_summary.reset_index()
+training_summary.columns = [
+    "Species",
+    "Birds",
+    "Bill length (mm)",
+    "Bill depth (mm)",
+    "Flipper length (mm)",
+    "Body mass (g)",
+]
+training_summary = training_summary.set_index("Species")
+training_summary
+```
+
+**Table 1.** Number of training birds of each species, and the mean of each body measurement.
+
+```{python}
+#| fig-width: 6
+#| fig-height: 4.2
+# Training-set count of the target variable. Chinstrap is the smallest class.
+figure, axis = plt.subplots()
+axis.bar(
+    counts.index,
+    counts.values,
+    color=[SPECIES_COLOURS[species] for species in counts.index],
+)
+axis.set_xlabel("Species")
+axis.set_ylabel("Number of penguins")
+axis.set_ylim(0, counts.max() * 1.2)
+figure.tight_layout()
+plt.show()
+```
+
+**Figure 1.** Number of training birds of each species. Adelie is the largest class and Chinstrap is the smallest.
+
+```{python}
+#| fig-width: 6.5
+#| fig-height: 4.8
+# Training set only. Two features: bill length (mm) and bill depth (mm). Colour is the target, species.
+figure, axis = plt.subplots()
+for species, group in train_fit.groupby(TARGET, observed=True):
+    axis.scatter(
+        group["bill_length_mm"],
+        group["bill_depth_mm"],
+        label=species,
+        c=SPECIES_COLOURS[species],
+        alpha=0.75,
+        s=36,
+        edgecolors="none",
+    )
+axis.set_xlabel("Bill length (mm)")
+axis.set_ylabel("Bill depth (mm)")
+axis.legend(title="Species")
+figure.tight_layout()
+plt.show()
+```
+
+**Figure 2.** Bill length and bill depth in the training set. Gentoo penguins have shallower bills. Chinstrap penguins have longer bills than Adelie penguins.
+
+```{python}
+#| fig-width: 6.5
+#| fig-height: 4.8
+# Training set only. Two features: flipper length (mm) and body mass (g). Colour is the target, species.
+figure, axis = plt.subplots()
+for species, group in train_fit.groupby(TARGET, observed=True):
+    axis.scatter(
+        group["flipper_length_mm"],
+        group["body_mass_g"],
+        label=species,
+        c=SPECIES_COLOURS[species],
+        alpha=0.75,
+        s=36,
+        edgecolors="none",
+    )
+axis.set_xlabel("Flipper length (mm)")
+axis.set_ylabel("Body mass (g)")
+axis.legend(title="Species")
+figure.tight_layout()
+plt.show()
+```
+
+**Figure 3.** Flipper length and body mass in the training set. Gentoo penguins are heavier and have longer flippers. Adelie and Chinstrap penguins overlap on both axes.
