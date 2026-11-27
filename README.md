@@ -12,7 +12,7 @@ The final report is published at <https://ubc-mds-2026-27.github.io/DSCI-522-GRO
 
 ## Usage
 
-The analysis runs in a Docker container, so everyone uses the same software and package versions. The image is published on Docker Hub at [DOCKERHUB_USERNAME/dsci-522-group-29-classifying-palmer-penguin-species-from-body-measurements](https://hub.docker.com/r/DOCKERHUB_USERNAME/dsci-522-group-29-classifying-palmer-penguin-species-from-body-measurements).
+The analysis runs in a Docker container, so everyone uses the same software and package versions. The image is published on Docker Hub at [zaakeer/dsci-522-group-29-classifying-palmer-penguin-species-from-body-measurements](https://hub.docker.com/r/zaakeer/dsci-522-group-29-classifying-palmer-penguin-species-from-body-measurements).
 
 ### Setup
 
