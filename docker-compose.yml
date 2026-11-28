@@ -5,7 +5,7 @@ services:
   # the service name: `docker compose run analysis-env ...` uses it
   analysis-env:
     # The workflow updates this tag automatically.
-    image: zaakeer/dsci-522-group-29-classifying-palmer-penguin-species-from-body-measurements:sha-dfd0bc6
+    image: zaakeer/dsci-522-group-29-classifying-palmer-penguin-species-from-body-measurements:sha-b060a39
     ports:
       # 2222 on your computer, 22 (ssh) in the container
       - "127.0.0.1:2222:22"
